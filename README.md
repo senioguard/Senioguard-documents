@@ -4,7 +4,59 @@ A single-binary Go document manager with session auth, MongoDB metadata, Qdrant 
 
 ## Run
 
-Fresh clone on Debian/Ubuntu:
+Follow these steps to set up and start the application:
+
+### 1. Run Docker Services
+The application requires several backend services. You can start them in the background using Docker Compose:
+
+```bash
+docker compose up -d
+```
+This starts:
+- **MongoDB** (`localhost:27017`) - Metadata store.
+- **Qdrant** (`localhost:6333` / `localhost:6334`) - Vector database.
+- **MinIO** (`localhost:9000` / `localhost:9001`) - Document storage server.
+- **Caddy** (`localhost:80` / `localhost:443`) - Reverse proxy.
+
+### 2. Set Up Environment Variables
+Copy `.env.example` to `.env` and fill in your details:
+
+```bash
+cp .env.example .env
+```
+
+Make sure to set your preferred `AI_PROVIDER` (e.g., `deepinfra` or `nvidia`) and their corresponding API keys.
+
+### 3. Build & Run the Go Server
+Run the single-binary Go application backend server:
+
+```bash
+go run ./cmd/server
+```
+
+Or run via `make`:
+
+```bash
+make run
+```
+
+The Go server runs on port `8080`.
+
+### Troubleshooting Background Services
+If you see an error like `bind: address already in use` when starting the server, or want to verify if a background instance is already running:
+
+1. **Check if port 8080 is already bound:**
+   ```bash
+   lsof -i :8080
+   ```
+2. **Stop the existing process:**
+   ```bash
+   kill <PID>
+   ```
+
+---
+
+Fresh clone quickstart on Debian/Ubuntu:
 
 ```bash
 ./scripts/setup.sh
@@ -12,7 +64,18 @@ Fresh clone on Debian/Ubuntu:
 
 The setup script installs missing host packages, creates `.env`, downloads Go modules, and starts MongoDB, Qdrant, MinIO, and Caddy with Docker Compose.
 
-Then edit `.env` and set `NVIDIA_API_KEY`, or switch to local Ollama:
+Then edit `.env` and set the provider keys you need. By default the app uses NVIDIA-compatible chat and NVIDIA embeddings, but chat and embeddings can be selected independently:
+
+```bash
+AI_PROVIDER=deepinfra
+
+EMBED_PROVIDER=deepinfra
+DEEPINFRA_API_KEY=...
+DEEPINFRA_LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash
+DEEPINFRA_EMBED_MODEL=BAAI/bge-m3
+```
+
+Or switch to local Ollama:
 
 ```bash
 AI_PROVIDER=ollama
@@ -56,9 +119,9 @@ make services-down
 Every capability is injected through `internal/module` interfaces:
 
 - `Storage`: `STORAGE_MODULE=local|minio`
-- `Extractor`: Markdown, plain text, PDF, DOCX registry by MIME type
-- `LLM`: `AI_PROVIDER=nvidia|ollama`
-- `Embedder`: `AI_PROVIDER=nvidia|ollama`
+- `Extractor`: Markdown, plain text, DOCX, and high-quality PDF text extraction powered by `github.com/lightningrag/pdf-go` (providing robust ToUnicode and full font-map parsing to handle complex layout styles/multi-page PDFs correctly).
+- `LLM`: `AI_PROVIDER=nvidia|deepinfra|ollama`
+- `Embedder`: `EMBED_PROVIDER=nvidia|deepinfra|ollama`
 - `Chunker`: word and sentence implementations
 - `VectorDB`: Qdrant wrapper
 - `SourceConnector`: GitHub repo, issue, PR, and release sync
@@ -94,5 +157,5 @@ Each item is stored as a normal document under `GitHub/<owner>/<repo>/...`, with
 ## Notes
 
 - Qdrant's standard REST port is `6333`; if `QDRANT_HOST` is set to `localhost:6334`, the wrapper maps it to `localhost:6333`.
-- PDF extraction is intentionally a simple built-in extractor. For production-grade PDFs and OCR, add another `Extractor` implementation and register it without changing the pipeline.
+- PDF extraction is powered by the `github.com/lightningrag/pdf-go` library. It extracts text accurately page-by-page by decoding stream objects, font encodings (WinAnsi, MacRoman, Custom CMaps), and ToUnicode maps. This enables the RAG pipeline to process complex, multi-page layout PDFs (such as pitch decks) beautifully.
 - The UI uses CDN assets for HTMX, Alpine.js, Tailwind, Mermaid, Marked, and highlight.js.

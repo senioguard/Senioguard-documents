@@ -123,8 +123,18 @@ func (p *Processor) label(ctx context.Context, name, text string) ([]string, str
 	}
 	answer = strings.Trim(answer, " \n\t`")
 	answer = strings.TrimPrefix(answer, "json")
+	answer = extractJSONObject(answer)
 	if err := json.Unmarshal([]byte(answer), &parsed); err != nil {
 		return nil, "", answer
 	}
 	return parsed.Labels, parsed.Category, parsed.Summary
+}
+
+func extractJSONObject(value string) string {
+	start := strings.Index(value, "{")
+	end := strings.LastIndex(value, "}")
+	if start == -1 || end == -1 || end <= start {
+		return value
+	}
+	return value[start : end+1]
 }

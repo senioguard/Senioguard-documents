@@ -35,30 +35,42 @@ func (c *GitHubConnector) Name() string {
 func (c *GitHubConnector) Sync(ctx context.Context) (module.SourceSyncResult, error) {
 	result := module.SourceSyncResult{Source: c.Name()}
 	for _, repo := range c.Repos {
-		owner, name, ok := splitRepo(repo)
-		if !ok {
-			result.Skipped++
-			continue
-		}
-		repoRoot, err := c.ensurePath(ctx, nil, "GitHub", owner+"/"+name)
-		if err != nil {
-			return result, err
-		}
-		info, err := c.repo(ctx, owner, name)
-		if err != nil {
-			return result, err
-		}
-		if err := c.syncFiles(ctx, owner, name, info.DefaultBranch, repoRoot, &result); err != nil {
-			return result, err
-		}
-		if err := c.syncIssues(ctx, owner, name, repoRoot, &result); err != nil {
-			return result, err
-		}
-		if err := c.syncReleases(ctx, owner, name, repoRoot, &result); err != nil {
+		if err := c.syncRepo(ctx, repo, &result); err != nil {
 			return result, err
 		}
 	}
 	return result, nil
+}
+
+func (c *GitHubConnector) SyncSelection(ctx context.Context, selection string) (module.SourceSyncResult, error) {
+	result := module.SourceSyncResult{Source: c.Name()}
+	if err := c.syncRepo(ctx, selection, &result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (c *GitHubConnector) syncRepo(ctx context.Context, repo string, result *module.SourceSyncResult) error {
+	owner, name, ok := splitRepo(repo)
+	if !ok {
+		result.Skipped++
+		return fmt.Errorf("repo must use owner/name format")
+	}
+	repoRoot, err := c.ensurePath(ctx, nil, "GitHub", owner+"/"+name)
+	if err != nil {
+		return err
+	}
+	info, err := c.repo(ctx, owner, name)
+	if err != nil {
+		return err
+	}
+	if err := c.syncFiles(ctx, owner, name, info.DefaultBranch, repoRoot, result); err != nil {
+		return err
+	}
+	if err := c.syncIssues(ctx, owner, name, repoRoot, result); err != nil {
+		return err
+	}
+	return c.syncReleases(ctx, owner, name, repoRoot, result)
 }
 
 type githubRepo struct {

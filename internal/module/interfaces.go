@@ -36,7 +36,7 @@ type Chunker interface {
 type VectorDB interface {
 	EnsureCollection(ctx context.Context, dimensions int) error
 	UpsertChunks(ctx context.Context, chunks []model.Chunk, vectors [][]float32) error
-	Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID) ([]model.RAGSource, error)
+	Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID, documentIDs []primitive.ObjectID) ([]model.RAGSource, error)
 	DeleteDocument(ctx context.Context, documentID primitive.ObjectID) error
 }
 
@@ -51,4 +51,9 @@ type SourceSyncResult struct {
 type SourceConnector interface {
 	Name() string
 	Sync(ctx context.Context) (SourceSyncResult, error)
+}
+
+type SelectiveSourceConnector interface {
+	SourceConnector
+	SyncSelection(ctx context.Context, selection string) (SourceSyncResult, error)
 }

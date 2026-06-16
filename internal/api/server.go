@@ -34,17 +34,18 @@ type Server struct {
 	storage   module.Storage
 	processor *processor.Processor
 	rag       rag.Service
+	vectorDB  module.VectorDB
 	sources   map[string]module.SourceConnector
 	templates *template.Template
 	mux       *http.ServeMux
 }
 
-func New(cfg config.Config, repos *repository.Repositories, storage module.Storage, processor *processor.Processor, rag rag.Service, sources []module.SourceConnector, templates *template.Template) *Server {
+func New(cfg config.Config, repos *repository.Repositories, storage module.Storage, processor *processor.Processor, rag rag.Service, vectorDB module.VectorDB, sources []module.SourceConnector, templates *template.Template) *Server {
 	sourceMap := map[string]module.SourceConnector{}
 	for _, connector := range sources {
 		sourceMap[connector.Name()] = connector
 	}
-	s := &Server{cfg: cfg, repos: repos, storage: storage, processor: processor, rag: rag, sources: sourceMap, templates: templates, mux: http.NewServeMux()}
+	s := &Server{cfg: cfg, repos: repos, storage: storage, processor: processor, rag: rag, vectorDB: vectorDB, sources: sourceMap, templates: templates, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -116,6 +117,8 @@ func (s *Server) ui(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "empty":
 		s.render(w, "empty.html", nil)
+	case path == "rag-panel":
+		s.render(w, "rag-panel.html", nil)
 	case path == "tree":
 		s.renderTree(w, r)
 	case strings.HasPrefix(path, "documents/"):
@@ -132,7 +135,12 @@ func (s *Server) ui(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "document.html", map[string]any{"Document": doc})
 	case path == "rag":
 		question := r.FormValue("question")
-		response, err := s.rag.Query(r.Context(), question, nil, 0)
+		topK, _ := strconv.Atoi(r.FormValue("topK"))
+		documentIDs := parseObjectIDList(r.FormValue("documentIds"))
+		if docID := parseOptionalObjectID(r.FormValue("documentId")); docID != nil {
+			documentIDs = append(documentIDs, *docID)
+		}
+		response, err := s.rag.Query(r.Context(), question, nil, documentIDs, topK)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -154,15 +162,43 @@ func (s *Server) renderTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	type collectionView struct {
+	type treeNode struct {
 		model.Collection
-		Depth int
+		Children  []*treeNode
+		Documents []model.Document
 	}
-	views := make([]collectionView, len(collections))
-	for i, c := range collections {
-		views[i] = collectionView{Collection: c, Depth: strings.Count(c.Path, "/")}
+	root := &treeNode{}
+	nodes := map[string]*treeNode{}
+	for _, collection := range collections {
+		collection := collection
+		nodes[collection.ID.Hex()] = &treeNode{Collection: collection}
 	}
-	s.render(w, "tree.html", map[string]any{"Collections": views, "Documents": docs})
+	for _, collection := range collections {
+		node := nodes[collection.ID.Hex()]
+		if collection.ParentID == nil {
+			root.Children = append(root.Children, node)
+			continue
+		}
+		parent := nodes[collection.ParentID.Hex()]
+		if parent == nil {
+			root.Children = append(root.Children, node)
+			continue
+		}
+		parent.Children = append(parent.Children, node)
+	}
+	for _, doc := range docs {
+		if doc.CollectionID == nil {
+			root.Documents = append(root.Documents, doc)
+			continue
+		}
+		node := nodes[doc.CollectionID.Hex()]
+		if node == nil {
+			root.Documents = append(root.Documents, doc)
+			continue
+		}
+		node.Documents = append(node.Documents, doc)
+	}
+	s.render(w, "tree.html", map[string]any{"Root": root})
 }
 
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +216,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.documentRoutes(w, r, parts)
 	case len(parts) == 2 && parts[0] == "rag" && parts[1] == "query":
 		s.ragQuery(w, r)
+	case len(parts) == 2 && parts[0] == "rag" && parts[1] == "save":
+		s.saveRAGAnswer(w, r)
 	case len(parts) == 3 && parts[0] == "sources" && parts[2] == "sync":
 		s.syncSource(w, r, parts[1])
 	case len(parts) == 1 && parts[0] == "search":
@@ -196,13 +234,35 @@ func (s *Server) syncSource(w http.ResponseWriter, r *http.Request, name string)
 	}
 	connector, ok := s.sources[name]
 	if !ok {
+		if acceptsHTML(r) {
+			s.render(w, "source-sync-error.html", map[string]string{
+				"Source":  name,
+				"Message": "This source connector is not configured. Set GITHUB_ENABLED=true and GITHUB_REPOS in .env, then restart the app.",
+			})
+			return
+		}
 		http.Error(w, "source connector is not configured", http.StatusNotFound)
 		return
 	}
-	result, err := connector.Sync(r.Context())
+	selection := strings.TrimSpace(r.FormValue("selection"))
+	if selection == "" {
+		selection = strings.TrimSpace(r.FormValue("repo"))
+	}
+	var result module.SourceSyncResult
+	var err error
+	if selection != "" {
+		selective, ok := connector.(module.SelectiveSourceConnector)
+		if !ok {
+			err = fmt.Errorf("%s does not support manual selections", name)
+		} else {
+			result, err = selective.SyncSelection(r.Context(), selection)
+		}
+	} else {
+		result, err = connector.Sync(r.Context())
+	}
 	if acceptsHTML(r) {
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			s.render(w, "source-sync-error.html", map[string]string{"Source": name, "Message": err.Error()})
 			return
 		}
 		s.render(w, "source-sync.html", result)
@@ -248,9 +308,25 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request, parts 
 			respond(w, item, err)
 		case http.MethodPut:
 			item, err := s.repos.Collections.Update(r.Context(), *id, formOrJSON(r, "name"))
+			if acceptsHTML(r) {
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				s.renderTree(w, r)
+				return
+			}
 			respond(w, item, err)
 		case http.MethodDelete:
 			err := s.repos.Collections.Delete(r.Context(), *id)
+			if acceptsHTML(r) {
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				s.renderTree(w, r)
+				return
+			}
 			respond(w, map[string]string{"status": "deleted"}, err)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -292,7 +368,12 @@ func (s *Server) documentRoutes(w http.ResponseWriter, r *http.Request, parts []
 			doc, err := s.repos.Documents.Get(r.Context(), id)
 			if err == nil {
 				_ = s.storage.Delete(r.Context(), doc.StorageKey)
+				_ = s.vectorDB.DeleteDocument(r.Context(), id)
 				_ = s.repos.Documents.Delete(r.Context(), id)
+			}
+			if acceptsHTML(r) {
+				s.render(w, "empty.html", nil)
+				return
 			}
 			respond(w, map[string]string{"status": "deleted"}, err)
 		default:
@@ -320,9 +401,39 @@ func (s *Server) documentRoutes(w http.ResponseWriter, r *http.Request, parts []
 	case "move":
 		collectionID := parseOptionalObjectID(formOrJSON(r, "collectionId"))
 		respond(w, map[string]string{"status": "moved"}, s.repos.Documents.Move(r.Context(), id, collectionID))
+	case "metadata":
+		s.documentMetadata(w, r, id)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (s *Server) documentMetadata(w http.ResponseWriter, r *http.Request, id primitive.ObjectID) {
+	key := formOrJSON(r, "key")
+	var err error
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		err = s.repos.Documents.SetMetadata(r.Context(), id, key, formOrJSON(r, "value"))
+	case http.MethodDelete:
+		err = s.repos.Documents.DeleteMetadata(r.Context(), id, key)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	doc, err := s.repos.Documents.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if acceptsHTML(r) {
+		s.render(w, "document.html", map[string]any{"Document": doc})
+		return
+	}
+	writeJSON(w, http.StatusOK, doc)
 }
 
 func (s *Server) uploadDocuments(w http.ResponseWriter, r *http.Request, collectionID *primitive.ObjectID) {
@@ -448,16 +559,70 @@ func (s *Server) collectionForPath(ctx context.Context, root *primitive.ObjectID
 
 func (s *Server) ragQuery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Question     string `json:"question"`
-		CollectionID string `json:"collectionId"`
-		TopK         int    `json:"topK"`
+		Question     string   `json:"question"`
+		CollectionID string   `json:"collectionId"`
+		DocumentIDs  []string `json:"documentIds"`
+		TopK         int      `json:"topK"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	response, err := s.rag.Query(r.Context(), req.Question, parseOptionalObjectID(req.CollectionID), req.TopK)
+	documentIDs := make([]primitive.ObjectID, 0, len(req.DocumentIDs))
+	for _, value := range req.DocumentIDs {
+		if id := parseOptionalObjectID(value); id != nil {
+			documentIDs = append(documentIDs, *id)
+		}
+	}
+	response, err := s.rag.Query(r.Context(), req.Question, parseOptionalObjectID(req.CollectionID), documentIDs, req.TopK)
 	respond(w, response, err)
+}
+
+func (s *Server) saveRAGAnswer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	title := strings.TrimSpace(formOrJSON(r, "title"))
+	if title == "" {
+		title = "RAG answer"
+	}
+	if !strings.HasSuffix(strings.ToLower(title), ".md") {
+		title += ".md"
+	}
+	content := strings.TrimSpace(formOrJSON(r, "content"))
+	if content == "" {
+		http.Error(w, "content is required", http.StatusBadRequest)
+		return
+	}
+	id := primitive.NewObjectID()
+	key := fmt.Sprintf("generated/rag/%s/%s", id.Hex(), title)
+	if err := s.storage.Upload(r.Context(), key, strings.NewReader(content), int64(len(content)), "text/markdown"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	doc, err := s.repos.Documents.Create(r.Context(), model.Document{
+		ID:          id,
+		DisplayName: title,
+		StorageKey:  key,
+		MIME:        "text/markdown",
+		Size:        int64(len(content)),
+		Source:      "rag",
+		SourceType:  "answer",
+		Metadata: map[string]string{
+			"generatedBy": "RAG",
+		},
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.processor.Enqueue(doc.ID)
+	if acceptsHTML(r) {
+		s.render(w, "rag-save.html", map[string]any{"Document": doc})
+		return
+	}
+	writeJSON(w, http.StatusCreated, doc)
 }
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
@@ -548,6 +713,23 @@ func parseOptionalObjectID(value string) *primitive.ObjectID {
 		return nil
 	}
 	return &id
+}
+
+func parseObjectIDList(value string) []primitive.ObjectID {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	})
+	ids := make([]primitive.ObjectID, 0, len(parts))
+	seen := map[primitive.ObjectID]bool{}
+	for _, part := range parts {
+		id := parseOptionalObjectID(part)
+		if id == nil || seen[*id] {
+			continue
+		}
+		seen[*id] = true
+		ids = append(ids, *id)
+	}
+	return ids
 }
 
 func acceptsHTML(r *http.Request) bool {

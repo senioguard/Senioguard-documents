@@ -24,6 +24,12 @@ type Config struct {
 	NVIDIABaseURL     string
 	NVIDIALLMModel    string
 	NVIDIAEmbedModel  string
+	EmbedProvider     string
+	DeepInfraAPIKey   string
+	DeepInfraBaseURL  string
+	DeepInfraLLMModel string
+	DeepInfraModel    string
+	DeepInfraDim      int
 	OllamaHost        string
 	OllamaLLMModel    string
 	OllamaEmbedModel  string
@@ -57,6 +63,12 @@ func Load() Config {
 		NVIDIABaseURL:     env("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
 		NVIDIALLMModel:    env("NVIDIA_LLM_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1"),
 		NVIDIAEmbedModel:  env("NVIDIA_EMBED_MODEL", "nvidia/nv-embedqa-e5-v5"),
+		EmbedProvider:     strings.ToLower(env("EMBED_PROVIDER", env("AI_PROVIDER", "nvidia"))),
+		DeepInfraAPIKey:   os.Getenv("DEEPINFRA_API_KEY"),
+		DeepInfraBaseURL:  env("DEEPINFRA_BASE_URL", "https://api.deepinfra.com/v1/openai"),
+		DeepInfraLLMModel: env("DEEPINFRA_LLM_MODEL", "deepseek.v4.flash"),
+		DeepInfraModel:    env("DEEPINFRA_EMBED_MODEL", "BAAI/bge-large-en-v1.5"),
+		DeepInfraDim:      envInt("DEEPINFRA_EMBED_DIMENSIONS", 1024),
 		OllamaHost:        env("OLLAMA_HOST", "http://localhost:11434"),
 		OllamaLLMModel:    env("OLLAMA_LLM_MODEL", "llama3"),
 		OllamaEmbedModel:  env("OLLAMA_EMBED_MODEL", "nomic-embed-text"),

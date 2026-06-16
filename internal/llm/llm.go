@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -61,7 +62,64 @@ func (c NIMClient) post(ctx context.Context, url string, body any, dest any) err
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("NVIDIA NIM status %s", res.Status)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("NVIDIA NIM status %s: %s", res.Status, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(res.Body).Decode(dest)
+}
+
+type DeepInfraLLM struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+	Client  *http.Client
+}
+
+func (c DeepInfraLLM) Complete(ctx context.Context, system, user string) (string, error) {
+	body := map[string]any{
+		"model": c.Model,
+		"messages": []map[string]string{
+			{"role": "system", "content": system},
+			{"role": "user", "content": user},
+		},
+		"temperature": 0.2,
+	}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := c.post(ctx, strings.TrimRight(c.BaseURL, "/")+"/chat/completions", body, &response); err != nil {
+		return "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("DeepInfra returned no choices")
+	}
+	return strings.TrimSpace(response.Choices[0].Message.Content), nil
+}
+
+func (c DeepInfraLLM) post(ctx context.Context, url string, body any, dest any) error {
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	client := c.Client
+	if client == nil {
+		client = &http.Client{Timeout: 90 * time.Second}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("DeepInfra status %s: %s", res.Status, strings.TrimSpace(string(body)))
 	}
 	return json.NewDecoder(res.Body).Decode(dest)
 }

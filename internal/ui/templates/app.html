@@ -12,52 +12,273 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    .htmx-indicator { opacity: 0; transition: opacity 150ms ease-in; }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator { opacity: 1; }
+  </style>
 </head>
-<body class="bg-slate-100 text-slate-900">
-  <div class="h-screen grid grid-cols-[360px_1fr]">
-    <aside class="border-r bg-white overflow-y-auto p-4">
-      <div class="flex items-center justify-between mb-4">
-        <h1 class="font-bold text-lg">Files & Folders</h1>
-        <a href="/logout" class="text-sm text-slate-500">Logout</a>
+<body class="bg-slate-50 text-slate-900 antialiased font-sans">
+  <div class="h-screen grid grid-cols-[380px_1fr] overflow-hidden">
+    <!-- Sidebar Workspace Panel -->
+    <aside class="flex flex-col border-r border-slate-200 bg-white h-full overflow-hidden shadow-sm">
+      <!-- Workspace Header -->
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-base shadow-sm">
+            SG
+          </div>
+          <div>
+            <h1 class="font-bold text-sm text-slate-800 tracking-tight">Senioguard</h1>
+            <p class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Document Manager</p>
+          </div>
+        </div>
+        <a href="/logout" class="text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors border border-transparent hover:border-red-100">
+          Logout
+        </a>
       </div>
-      <form class="flex gap-2 mb-3" hx-post="/api/collections" hx-target="#tree" hx-swap="innerHTML" hx-on::after-request="this.reset()">
-        <input name="name" class="border rounded px-2 py-1 flex-1" placeholder="New folder">
-        <button class="bg-blue-600 text-white rounded px-3">+</button>
-      </form>
-      <div id="drop-root" class="border-2 border-dashed rounded-xl p-3 mb-3 text-sm text-slate-500">
-        <input id="file-input" type="file" multiple class="mb-2 text-xs">
-        <input id="folder-input" type="file" webkitdirectory multiple class="mb-2 text-xs">
-        <button onclick="uploadFiles('root')" class="bg-slate-900 text-white rounded px-3 py-1">Upload</button>
-        <progress id="upload-progress" value="0" max="100" class="w-full mt-2 hidden"></progress>
+
+      <!-- Scrollable Sidebar Area -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-4">
+        <!-- Main Quick Actions Button Bar -->
+        <div class="flex gap-2">
+          <!-- Global Chat Action Button -->
+          <button class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-3 py-2.5 font-semibold text-xs transition-all duration-150 shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 border border-emerald-500/20"
+            hx-get="/ui/rag-panel"
+            hx-target="#viewer"
+            hx-swap="innerHTML">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Ask Workspace
+          </button>
+
+          <!-- Create Folder Toggle Action Button -->
+          <div x-data="{creatingFolder: false}" class="flex-1">
+            <button type="button" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-2.5 font-semibold text-xs transition-all duration-150 shadow-sm shadow-blue-600/10 flex items-center justify-center gap-1.5 border border-blue-500/20" 
+                    @click="creatingFolder = !creatingFolder">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V4a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              New Folder
+            </button>
+            <form x-show="creatingFolder" x-transition class="flex gap-1.5 mt-2 p-1.5 border border-dashed border-slate-200 bg-slate-50 rounded-xl" hx-post="/api/collections" hx-target="#tree" hx-swap="innerHTML" hx-on::after-request="this.reset(); creatingFolder = false">
+              <input name="name" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs flex-1 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Folder name..." required>
+              <button class="bg-slate-900 hover:bg-slate-850 text-white rounded-lg px-3 text-xs font-semibold">Create</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Sleek Drag & Drop Root Zone -->
+        <div id="drop-root" class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/20 transition-all duration-150 text-slate-500 relative group">
+          <input id="file-input" type="file" multiple class="hidden" onchange="uploadFiles('root')">
+          <div onclick="document.getElementById('file-input').click()" class="space-y-1">
+            <div class="mx-auto w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-500 transition-colors">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </div>
+            <p class="text-xs font-semibold text-slate-700">Upload to root</p>
+            <p class="text-[10px] text-slate-400">Drag files here or click to browse</p>
+          </div>
+          <progress id="upload-progress" value="0" max="100" class="w-full h-1.5 rounded-full mt-3 hidden accent-blue-600"></progress>
+        </div>
+
+        <!-- Premium GitHub Source Integration Panel -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-16 h-16 bg-purple-500/5 rounded-full -mr-4 -mt-4 pointer-events-none"></div>
+          <div class="flex items-center gap-1.5 font-bold text-slate-800">
+            <svg class="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+            </svg>
+            GitHub Integration
+          </div>
+          <p class="text-slate-500 leading-relaxed text-[11px]">Sync folders, Markdown files, issues, or releases directly into your knowledge base.</p>
+          <form class="flex gap-1.5"
+            hx-post="/api/sources/github/sync"
+            hx-target="#source-sync-status"
+            hx-swap="innerHTML"
+            hx-disabled-elt="button"
+            hx-on::after-request="htmx.ajax('GET', '/ui/tree', '#tree')">
+            <input name="repo" class="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-mono" placeholder="owner/repo" value="senioguard/Senioguard-documents">
+            <button class="bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-65">Import</button>
+          </form>
+          <div id="source-sync-status" class="mt-2 text-[10px] text-slate-500"></div>
+        </div>
+
+        <!-- Explorer Tree Header & Controls -->
+        <div class="pt-2 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Explorer</span>
+            <div class="flex gap-1.5 shrink-0">
+              <button type="button" class="border border-slate-200 rounded-md px-2 py-1 text-[10px] font-semibold hover:bg-slate-100 text-slate-600 transition-colors" onclick="setFolderState(false)">Fold all</button>
+              <button type="button" class="border border-slate-200 rounded-md px-2 py-1 text-[10px] font-semibold hover:bg-slate-100 text-slate-600 transition-colors" onclick="setFolderState(true)">Open all</button>
+            </div>
+          </div>
+          
+          <!-- Hierarchical Explorer Tree Container -->
+          <div id="tree" hx-get="/ui/tree" hx-trigger="load" hx-swap="innerHTML"></div>
+        </div>
       </div>
-      <div class="bg-slate-50 border rounded-xl p-3 mb-3 text-sm">
-        <div class="font-semibold mb-1">GitHub Knowledge</div>
-        <p class="text-slate-500 mb-2">Sync configured repos into searchable documents.</p>
-        <button class="bg-purple-600 text-white rounded px-3 py-1"
-          hx-post="/api/sources/github/sync"
-          hx-target="#source-sync-status"
-          hx-swap="innerHTML">Sync GitHub</button>
-        <div id="source-sync-status" class="mt-2 text-xs text-slate-600"></div>
-      </div>
-      <div id="tree" hx-get="/ui/tree" hx-trigger="load" hx-swap="innerHTML"></div>
     </aside>
+    <!-- End Sidebar -->
+
+    <!-- Document Viewer -->
     <main id="viewer" class="overflow-y-auto" hx-get="/ui/empty" hx-trigger="load"></main>
   </div>
   <script>
-    mermaid.initialize({ startOnLoad: false });
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', flowchart: { htmlLabels: true } });
+
+    // Dynamic RAG Checkbox Cascading logic
+    function handleFolderCheckChange(checkbox) {
+      const details = checkbox.closest('details');
+      if (!details) return;
+      const isChecked = checkbox.checked;
+      details.querySelectorAll('input[type="checkbox"]').forEach(child => {
+        child.checked = isChecked;
+      });
+    }
+
+    function handleDocumentCheckChange(checkbox) {
+      if (!checkbox.checked) {
+        let parent = checkbox.closest('details');
+        while (parent) {
+          const parentCheckbox = parent.querySelector(':scope > summary input[type="checkbox"]');
+          if (parentCheckbox) parentCheckbox.checked = false;
+          parent = parent.parentElement.closest('details');
+        }
+      }
+    }
+
+    // Modern file upload with dynamic collection ID mapping
     function uploadFiles(collectionId) {
-      const files = [...document.getElementById('file-input').files, ...document.getElementById('folder-input').files];
+      const files = [...document.getElementById('file-input').files];
       if (!files.length) return;
+      
       const form = new FormData();
-      for (const file of files) form.append('files', file, file.webkitRelativePath || file.name);
+      for (const file of files) {
+        form.append('files', file, file.webkitRelativePath || file.name);
+      }
+      
       const progress = document.getElementById('upload-progress');
       progress.classList.remove('hidden');
+      progress.value = 0;
+      
       const xhr = new XMLHttpRequest();
-      xhr.upload.onprogress = e => { if (e.lengthComputable) progress.value = (e.loaded / e.total) * 100; };
-      xhr.onload = () => { htmx.ajax('GET', '/ui/tree', '#tree'); progress.classList.add('hidden'); };
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          progress.value = (e.loaded / e.total) * 100;
+        }
+      };
+      xhr.onload = () => {
+        htmx.ajax('GET', '/ui/tree', '#tree');
+        progress.classList.add('hidden');
+      };
       xhr.open('POST', `/api/collections/${collectionId}/documents`);
       xhr.send(form);
     }
+
+    // Upload files directly to any subfolder
+    function uploadFolderFiles(event, collectionId) {
+      const files = [...event.target.files];
+      if (!files.length) return;
+      
+      const form = new FormData();
+      for (const file of files) {
+        form.append('files', file, file.webkitRelativePath || file.name);
+      }
+      
+      const progress = document.getElementById('upload-progress');
+      if (progress) {
+        progress.classList.remove('hidden');
+        progress.value = 0;
+      }
+      
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable && progress) {
+          progress.value = (e.loaded / e.total) * 100;
+        }
+      };
+      xhr.onload = () => {
+        htmx.ajax('GET', '/ui/tree', '#tree');
+        if (progress) progress.classList.add('hidden');
+      };
+      xhr.open('POST', `/api/collections/${collectionId}/documents`);
+      xhr.send(form);
+    }
+
+    // Handle dropping files or documents on folder nodes
+    function handleFolderDrop(event, collectionId, element) {
+      event.preventDefault();
+      element.classList.remove('bg-blue-50', 'border-blue-400', 'bg-slate-50');
+      
+      const docId = event.dataTransfer.getData('text/document-id');
+      if (docId) {
+        // Internal Move Operation
+        fetch(`/api/documents/${docId}/move`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collectionId })
+        }).then(() => htmx.ajax('GET', '/ui/tree', '#tree'));
+        return;
+      }
+      
+      // External File Drop Upload
+      const files = [...event.dataTransfer.files];
+      if (!files.length) return;
+      
+      const form = new FormData();
+      for (const file of files) {
+        form.append('files', file, file.webkitRelativePath || file.name);
+      }
+      
+      const progress = document.getElementById('upload-progress');
+      if (progress) {
+        progress.classList.remove('hidden');
+        progress.value = 0;
+      }
+      
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable && progress) {
+          progress.value = (e.loaded / e.total) * 100;
+        }
+      };
+      xhr.onload = () => {
+        htmx.ajax('GET', '/ui/tree', '#tree');
+        if (progress) progress.classList.add('hidden');
+      };
+      xhr.open('POST', `/api/collections/${collectionId}/documents`);
+      xhr.send(form);
+    }
+
+    // Set dragging listeners on drop-root
+    const dropRoot = document.getElementById('drop-root');
+    if (dropRoot) {
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropRoot.addEventListener(eventName, e => {
+          e.preventDefault();
+          dropRoot.classList.add('border-blue-500', 'bg-blue-50/20');
+        }, false);
+      });
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropRoot.addEventListener(eventName, e => {
+          e.preventDefault();
+          dropRoot.classList.remove('border-blue-500', 'bg-blue-50/20');
+        }, false);
+      });
+      dropRoot.addEventListener('drop', e => {
+        const files = e.dataTransfer.files;
+        if (files.length) {
+          const fileInput = document.getElementById('file-input');
+          fileInput.files = files;
+          uploadFiles('root');
+        }
+      });
+    }
+
     function moveDocument(event, collectionId) {
       event.preventDefault();
       const docId = event.dataTransfer.getData('text/document-id');
@@ -65,13 +286,163 @@
       fetch(`/api/documents/${docId}/move`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ collectionId }) })
         .then(() => htmx.ajax('GET', '/ui/tree', '#tree'));
     }
-    document.body.addEventListener('htmx:afterSwap', () => {
-      document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
-      document.querySelectorAll('.markdown').forEach(el => {
-        el.innerHTML = marked.parse(el.textContent);
-        mermaid.run({ querySelector: '.language-mermaid' });
+    
+    function setFolderState(open) {
+      document.querySelectorAll('#tree details').forEach(folder => folder.open = open);
+    }
+    
+    function selectedRagDocumentIds() {
+      const ids = new Set();
+      document.querySelectorAll('#tree .rag-scope-document:checked').forEach(input => ids.add(input.value));
+      document.querySelectorAll('#tree .rag-scope-folder:checked').forEach(input => {
+        const folder = input.closest('details');
+        if (!folder) return;
+        folder.querySelectorAll('.rag-scope-document').forEach(doc => ids.add(doc.value));
       });
-    });
+      return [...ids].join(',');
+    }
+    let mermaidRenderSeq = 0;
+    async function renderMarkdownAndDiagrams() {
+      document.querySelectorAll('.markdown').forEach(el => {
+        if (el.dataset.markdownRendered === 'true') return;
+        el.innerHTML = marked.parse(el.textContent);
+        el.dataset.markdownRendered = 'true';
+      });
+      document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+      for (const code of document.querySelectorAll('pre code.language-mermaid')) {
+        const source = normalizeMermaidSource(code.textContent.trim());
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mermaid my-4 rounded-lg border bg-white p-3 overflow-auto';
+        wrapper.dataset.mermaidPending = 'true';
+        wrapper.dataset.mermaidSource = source;
+        wrapper.textContent = source;
+        code.closest('pre').replaceWith(wrapper);
+      }
+      for (const wrapper of document.querySelectorAll('.mermaid[data-mermaid-pending="true"]')) {
+        if (!wrapper.offsetParent) continue;
+        const source = wrapper.dataset.mermaidSource || wrapper.textContent.trim();
+        try {
+          const id = `mermaid-diagram-${Date.now()}-${++mermaidRenderSeq}`;
+          const rendered = await mermaid.render(id, source);
+          wrapper.className = 'my-4 rounded-lg border bg-white overflow-auto';
+          wrapper.innerHTML = `
+            <div class="flex justify-end border-b bg-slate-50 px-3 py-2">
+              <a class="mermaid-download rounded border bg-white px-2 py-1 text-xs text-slate-400" aria-disabled="true">Preparing PNG...</a>
+            </div>
+            <div class="mermaid-svg p-3">${rendered.svg}</div>
+          `;
+          wrapper.dataset.mermaidPending = 'false';
+          prepareMermaidPNGDownload(wrapper);
+        } catch (error) {
+          wrapper.className = 'my-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 whitespace-pre-wrap';
+          wrapper.dataset.mermaidPending = 'false';
+          wrapper.textContent = `Mermaid could not render this diagram:\n${error.message || error}\n\n${source}`;
+        }
+      }
+    }
+    function normalizeMermaidSource(source) {
+      return source
+        .replace(/\r\n/g, '\n')
+        .replace(/<br\s*\/?>/gi, '<br/>')
+        .split('\n')
+        .map(line => {
+          if (!/[<>"'/()+:]/.test(line)) return line;
+          return line
+            .replace(/(\b[A-Za-z][\w-]*)\[\((?!["'])([^\]\n]+?)\)\]/g, (_, id, label) => `${id}[(${quoteMermaidLabel(label)})]`)
+            .replace(/(\b[A-Za-z][\w-]*)\[(?!["'(])([^\]\n]+?)\]/g, (_, id, label) => `${id}[${quoteMermaidLabel(label)}]`);
+        })
+        .join('\n');
+    }
+    function quoteMermaidLabel(label) {
+      return `"${label.trim().replace(/"/g, '#quot;')}"`;
+    }
+    async function prepareMermaidPNGDownload(wrapper) {
+      const link = wrapper.querySelector('.mermaid-download');
+      const svg = wrapper?.querySelector('svg');
+      if (!link || !svg) return;
+      try {
+        const pngURL = await mermaidPNGDataURL(svg);
+        link.href = pngURL;
+        link.download = `mermaid-diagram-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+        link.textContent = 'Download PNG';
+        link.className = 'mermaid-download rounded border bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100';
+        link.removeAttribute('aria-disabled');
+      } catch (error) {
+        console.error('Mermaid PNG Export Error:', error);
+        link.textContent = 'PNG unavailable';
+        link.title = error.message || String(error);
+        link.className = 'mermaid-download rounded border bg-slate-100 px-2 py-1 text-xs text-slate-400';
+      }
+    }
+    function mermaidPNGDataURL(svg) {
+      return new Promise((resolve, reject) => {
+        try {
+          const serializer = new XMLSerializer();
+          const clone = svg.cloneNode(true);
+          clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+          // Ensure all immediate children inside foreignObject have the XHTML namespace
+          clone.querySelectorAll('foreignObject > *').forEach(el => {
+            if (!el.getAttribute('xmlns')) {
+              el.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+            }
+          });
+
+          // Compute robust dimensions
+          const bounds = svg.getBoundingClientRect();
+          const vbAttr = svg.getAttribute('viewBox');
+          let vbWidth = 1200, vbHeight = 800;
+          if (vbAttr) {
+            const parts = vbAttr.split(/[\s,]+/).map(Number);
+            if (parts.length === 4 && !isNaN(parts[2]) && !isNaN(parts[3])) {
+              vbWidth = parts[2];
+              vbHeight = parts[3];
+            }
+          }
+          const width = Math.ceil(bounds.width || vbWidth || 1200) || 1200;
+          const height = Math.ceil(bounds.height || vbHeight || 800) || 800;
+          clone.setAttribute('width', width);
+          clone.setAttribute('height', height);
+
+          // Get serialized string and sanitize HTML self-closing tags to prevent XML parse errors in Image loader
+          let svgString = serializer.serializeToString(clone);
+          svgString = svgString
+            .replace(/<br\s*>/gi, '<br/>')
+            .replace(/<br>/gi, '<br/>')
+            .replace(/<hr\s*>/gi, '<hr/>')
+            .replace(/<hr>/gi, '<hr/>')
+            .replace(/<img([^>]+)>/gi, '<img$1/>');
+
+          // Convert to Data URL base64 representation to satisfy CSP policies
+          const base64 = btoa(unescape(encodeURIComponent(svgString)));
+          const dataURL = 'data:image/svg+xml;base64,' + base64;
+
+          const image = new Image();
+          image.onload = () => {
+            try {
+              const scale = 2; // High DPI export
+              const canvas = document.createElement('canvas');
+              canvas.width = width * scale;
+              canvas.height = height * scale;
+              const context = canvas.getContext('2d');
+              context.fillStyle = '#ffffff';
+              context.fillRect(0, 0, canvas.width, canvas.height);
+              context.drawImage(image, 0, 0, canvas.width, canvas.height);
+              resolve(canvas.toDataURL('image/png'));
+            } catch (error) {
+              reject(error);
+            }
+          };
+          image.onerror = () => {
+            reject(new Error('HTML-to-Image render failed. This typically happens in some browsers when security sandbox rules block SVG <foreignObject> components.'));
+          };
+          image.src = dataURL;
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+    document.body.addEventListener('htmx:afterSwap', renderMarkdownAndDiagrams);
   </script>
 </body>
 </html>

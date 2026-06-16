@@ -8,8 +8,9 @@ import (
 	"io"
 	"mime"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/lightningrag/pdf-go/pdf"
 
 	"senioguard-documents/internal/module"
 )
@@ -90,17 +91,30 @@ func (PDFExtractor) Extract(r io.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var b strings.Builder
-	for _, match := range regexp.MustCompile(`\(([^()]*)\)`).FindAllSubmatch(data, -1) {
-		text := strings.ReplaceAll(string(match[1]), `\)`, ")")
-		text = strings.ReplaceAll(text, `\(`, "(")
-		b.WriteString(text)
-		b.WriteString(" ")
+	readerAt := bytes.NewReader(data)
+	pdfReader, err := pdf.NewPdfReader(readerAt, false)
+	if err != nil {
+		return "", err
 	}
-	if strings.TrimSpace(b.String()) == "" {
-		return "", fmt.Errorf("PDF text extraction found no plain text; use OCR or a richer PDF parser module")
+	numPages, err := pdfReader.NumPages()
+	if err != nil {
+		return "", err
 	}
-	return strings.TrimSpace(b.String()), nil
+	var sb strings.Builder
+	opts := pdf.ExtractTextOptions{}
+	for i := 0; i < numPages; i++ {
+		page, err := pdfReader.Page(i)
+		if err != nil {
+			return "", err
+		}
+		txt, err := page.ExtractTextAdvanced(opts)
+		if err != nil {
+			continue
+		}
+		sb.WriteString(txt)
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
 }
 
 func (PDFExtractor) SupportedMIMEs() []string {

@@ -34,7 +34,13 @@ func NewQdrant(host string) Qdrant {
 
 func (q Qdrant) EnsureCollection(ctx context.Context, dimensions int) error {
 	body := map[string]any{"vectors": map[string]any{"size": dimensions, "distance": "Cosine"}}
-	return q.request(ctx, http.MethodPut, "/collections/"+q.Collection, body, nil)
+	if err := q.request(ctx, http.MethodPut, "/collections/"+q.Collection, body, nil); err != nil {
+		if strings.Contains(err.Error(), "409 Conflict") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (q Qdrant) UpsertChunks(ctx context.Context, chunks []model.Chunk, vectors [][]float32) error {
@@ -58,10 +64,24 @@ func (q Qdrant) UpsertChunks(ctx context.Context, chunks []model.Chunk, vectors 
 	return q.request(ctx, http.MethodPut, "/collections/"+q.Collection+"/points?wait=true", map[string]any{"points": points}, nil)
 }
 
-func (q Qdrant) Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID) ([]model.RAGSource, error) {
+func (q Qdrant) Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID, documentIDs []primitive.ObjectID) ([]model.RAGSource, error) {
 	body := map[string]any{"vector": vector, "limit": topK, "with_payload": true}
+	var must []map[string]any
 	if collectionID != nil {
-		body["filter"] = map[string]any{"must": []map[string]any{{"key": "collectionId", "match": map[string]any{"value": collectionID.Hex()}}}}
+		must = append(must, map[string]any{"key": "collectionId", "match": map[string]any{"value": collectionID.Hex()}})
+	}
+	if len(documentIDs) == 1 {
+		must = append(must, map[string]any{"key": "documentId", "match": map[string]any{"value": documentIDs[0].Hex()}})
+	}
+	if len(documentIDs) > 1 {
+		values := make([]string, len(documentIDs))
+		for i, id := range documentIDs {
+			values[i] = id.Hex()
+		}
+		must = append(must, map[string]any{"key": "documentId", "match": map[string]any{"any": values}})
+	}
+	if len(must) > 0 {
+		body["filter"] = map[string]any{"must": must}
 	}
 	var response struct {
 		Result []struct {

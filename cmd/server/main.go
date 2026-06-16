@@ -76,7 +76,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      api.New(cfg, repos, storageModule, processorModule, ragService, sourceConnectors, templates),
+		Handler:      api.New(cfg, repos, storageModule, processorModule, ragService, vectorDB, sourceConnectors, templates),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -117,16 +117,39 @@ func buildStorage(ctx context.Context, cfg config.Config) (module.Storage, error
 }
 
 func buildAI(cfg config.Config) (module.LLM, module.Embedder, error) {
+	llmModule, err := buildLLM(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	embedderModule, err := buildEmbedder(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return llmModule, embedderModule, nil
+}
+
+func buildLLM(cfg config.Config) (module.LLM, error) {
 	switch cfg.AIProvider {
 	case "nvidia":
-		return llm.NIMClient{BaseURL: cfg.NVIDIABaseURL, APIKey: cfg.NVIDIAAPIKey, Model: cfg.NVIDIALLMModel},
-			embedder.NIMEmbedder{BaseURL: cfg.NVIDIABaseURL, APIKey: cfg.NVIDIAAPIKey, Model: cfg.NVIDIAEmbedModel},
-			nil
+		return llm.NIMClient{BaseURL: cfg.NVIDIABaseURL, APIKey: cfg.NVIDIAAPIKey, Model: cfg.NVIDIALLMModel}, nil
+	case "deepinfra":
+		return llm.DeepInfraLLM{BaseURL: cfg.DeepInfraBaseURL, APIKey: cfg.DeepInfraAPIKey, Model: cfg.DeepInfraLLMModel}, nil
 	case "ollama":
-		return llm.OllamaLLM{Host: cfg.OllamaHost, Model: cfg.OllamaLLMModel},
-			embedder.OllamaEmbedder{Host: cfg.OllamaHost, Model: cfg.OllamaEmbedModel},
-			nil
+		return llm.OllamaLLM{Host: cfg.OllamaHost, Model: cfg.OllamaLLMModel}, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported AI_PROVIDER %q", cfg.AIProvider)
+		return nil, fmt.Errorf("unsupported AI_PROVIDER %q", cfg.AIProvider)
+	}
+}
+
+func buildEmbedder(cfg config.Config) (module.Embedder, error) {
+	switch cfg.EmbedProvider {
+	case "nvidia":
+		return embedder.NIMEmbedder{BaseURL: cfg.NVIDIABaseURL, APIKey: cfg.NVIDIAAPIKey, Model: cfg.NVIDIAEmbedModel}, nil
+	case "deepinfra":
+		return embedder.DeepInfraEmbedder{BaseURL: cfg.DeepInfraBaseURL, APIKey: cfg.DeepInfraAPIKey, Model: cfg.DeepInfraModel, DimensionsN: cfg.DeepInfraDim}, nil
+	case "ollama":
+		return embedder.OllamaEmbedder{Host: cfg.OllamaHost, Model: cfg.OllamaEmbedModel}, nil
+	default:
+		return nil, fmt.Errorf("unsupported EMBED_PROVIDER %q", cfg.EmbedProvider)
 	}
 }

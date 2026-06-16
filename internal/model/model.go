@@ -43,6 +43,7 @@ type Document struct {
 	ExternalURL  string              `bson:"externalUrl,omitempty" json:"externalUrl,omitempty"`
 	Repository   string              `bson:"repository,omitempty" json:"repository,omitempty"`
 	Author       string              `bson:"author,omitempty" json:"author,omitempty"`
+	Metadata     map[string]string   `bson:"metadata,omitempty" json:"metadata,omitempty"`
 	CreatedAt    time.Time           `bson:"createdAt" json:"createdAt"`
 	UpdatedAt    time.Time           `bson:"updatedAt" json:"updatedAt"`
 }
@@ -64,6 +65,7 @@ type RAGSource struct {
 }
 
 type RAGResponse struct {
-	Answer  string      `json:"answer"`
-	Sources []RAGSource `json:"sources"`
+	Question string      `json:"question"`
+	Answer   string      `json:"answer"`
+	Sources  []RAGSource `json:"sources"`
 }

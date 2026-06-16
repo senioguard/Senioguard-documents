@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/lightningrag/pdf-go v1.0.0
 	github.com/minio/minio-go/v7 v7.0.95
 	go.mongodb.org/mongo-driver v1.17.4
 )

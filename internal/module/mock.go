@@ -110,7 +110,7 @@ func (m *MockVectorDB) UpsertChunks(ctx context.Context, chunks []model.Chunk, v
 	return nil
 }
 
-func (m *MockVectorDB) Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID) ([]model.RAGSource, error) {
+func (m *MockVectorDB) Search(ctx context.Context, vector []float32, topK int, collectionID *primitive.ObjectID, documentIDs []primitive.ObjectID) ([]model.RAGSource, error) {
 	if topK > 0 && topK < len(m.Sources) {
 		return m.Sources[:topK], nil
 	}

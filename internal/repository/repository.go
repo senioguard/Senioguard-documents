@@ -243,6 +243,36 @@ func (r *DocumentRepository) Move(ctx context.Context, id primitive.ObjectID, co
 	return err
 }
 
+func (r *DocumentRepository) SetMetadata(ctx context.Context, id primitive.ObjectID, key, value string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("metadata key is required")
+	}
+	if strings.ContainsAny(key, ".$") {
+		return fmt.Errorf("metadata key cannot contain . or $")
+	}
+	_, err := r.col.UpdateByID(ctx, id, bson.M{"$set": bson.M{
+		"metadata." + key: value,
+		"updatedAt":       time.Now().UTC(),
+	}})
+	return err
+}
+
+func (r *DocumentRepository) DeleteMetadata(ctx context.Context, id primitive.ObjectID, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("metadata key is required")
+	}
+	if strings.ContainsAny(key, ".$") {
+		return fmt.Errorf("metadata key cannot contain . or $")
+	}
+	_, err := r.col.UpdateByID(ctx, id, bson.M{
+		"$unset": bson.M{"metadata." + key: ""},
+		"$set":   bson.M{"updatedAt": time.Now().UTC()},
+	})
+	return err
+}
+
 func (r *DocumentRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
 	_, err := r.col.DeleteOne(ctx, bson.M{"_id": id})
 	return err

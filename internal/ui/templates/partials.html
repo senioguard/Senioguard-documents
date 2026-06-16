@@ -1,19 +1,207 @@
 {{define "empty.html"}}
-<section class="h-full flex items-center justify-center text-slate-500">
-  Select a document to view source, reading mode, or RAG chat.
+<section class="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 p-8 text-center select-none">
+  <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-4 border border-slate-200/50">
+    <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  </div>
+  <h3 class="font-semibold text-slate-700 text-sm mb-1">No Document Selected</h3>
+  <p class="text-xs max-w-sm leading-relaxed">Select a file from the explorer to inspect its details, view extracted markdown text, or query it using context-aware RAG chat.</p>
 </section>
 {{end}}
 
 {{define "tree.html"}}
-<div class="space-y-1 text-sm">
-  <div class="font-semibold p-2 rounded hover:bg-slate-100" ondrop="moveDocument(event, 'root')" ondragover="event.preventDefault()">📁 Root</div>
-  {{range .Collections}}
-    <div class="p-2 rounded hover:bg-slate-100" style="margin-left: {{.Depth}}rem" ondrop="moveDocument(event, '{{.ID.Hex}}')" ondragover="event.preventDefault()">📁 {{.Path}}</div>
-  {{end}}
-  <div class="mt-3 border-t pt-3">
-    {{range .Documents}}
-      <button class="block w-full text-left p-2 rounded hover:bg-blue-50" draggable="true" ondragstart="event.dataTransfer.setData('text/document-id', '{{.ID.Hex}}')" hx-get="/ui/documents/{{.ID.Hex}}" hx-target="#viewer" hx-swap="innerHTML">📄 {{.DisplayName}} <span class="text-xs text-slate-400">({{.Status}})</span></button>
+<div class="space-y-0.5 text-[11px]" x-data>
+  <div ondrop="handleFolderDrop(event, 'root', this)" 
+       ondragover="event.preventDefault()"
+       ondragenter="event.preventDefault(); this.classList.add('bg-slate-50')"
+       ondragleave="this.classList.remove('bg-slate-50')"
+       class="min-h-[200px] rounded-xl p-0.5 transition-colors duration-200">
+    {{if and (not .Root.Children) (not .Root.Documents)}}
+      <div class="text-center py-6 text-slate-400 select-none">
+        <svg class="w-6 h-6 mx-auto text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.31c-.195 0-.382-.078-.519-.215z" />
+        </svg>
+        <span class="text-xs">Empty workspace</span>
+      </div>
+    {{else}}
+      {{range .Root.Children}}{{template "collection-node" .}}{{end}}
+      {{range .Root.Documents}}{{template "document-row" .}}{{end}}
     {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "collection-node"}}
+<details open class="group" x-data="{ showNewFolder: false, renaming: false }" id="folder-{{.ID.Hex}}" onclick="event.stopPropagation()">
+  <summary class="flex items-center justify-between px-1.5 py-0.5 rounded hover:bg-slate-50 cursor-pointer list-none select-none transition-all duration-150 relative group/row border border-transparent hover:border-slate-100"
+           ondragenter="event.preventDefault(); this.classList.add('bg-blue-50', 'border-blue-400')"
+           ondragleave="this.classList.remove('bg-blue-50', 'border-blue-400')"
+           ondrop="handleFolderDrop(event, '{{.ID.Hex}}', this)"
+           ondragover="event.preventDefault()">
+    <div class="flex items-center min-w-0 flex-1 gap-1.5">
+      <!-- RAG Checkbox with StopPropagation -->
+      <input type="checkbox" 
+             class="rag-scope-folder w-3 h-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20" 
+             onclick="event.stopPropagation()" 
+             onchange="handleFolderCheckChange(this)"
+             title="Include folder in RAG search">
+      
+      <!-- Fold/Unfold Arrow -->
+      <svg class="w-3 h-3 text-slate-400 transition-transform duration-150 group-open:rotate-90 transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+      
+      <!-- Folder Icon -->
+      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0 group-open:hidden" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+      </svg>
+      <svg class="w-3.5 h-3.5 text-amber-500 shrink-0 hidden group-open:block" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H2V6zm0 3h16v6a2 2 0 01-2 2H4a2 2 0 01-2-2V9z" clip-rule="evenodd" />
+      </svg>
+      
+      <!-- Name -->
+      <span x-show="!renaming" class="truncate font-medium text-slate-700 text-[11px]">{{.Name}}</span>
+    </div>
+
+    <!-- Actions Row (Visible on Hover) -->
+    <div x-show="!renaming" class="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity ml-1.5 shrink-0" onclick="event.stopPropagation()">
+      <!-- Add nested folder -->
+      <button type="button" 
+              class="hover:text-blue-600 hover:bg-slate-100 text-slate-400 p-0.5 rounded transition-colors" 
+              @click.stop="showNewFolder = !showNewFolder" 
+              title="Add Subfolder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+
+      <!-- Upload files -->
+      <button type="button" 
+              class="hover:text-emerald-600 hover:bg-slate-100 text-slate-400 p-0.5 rounded transition-colors" 
+              @click.stop="this.nextElementSibling.click()" 
+              title="Upload files directly here">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+      </button>
+      <input type="file" class="hidden" multiple @change="uploadFolderFiles(event, '{{.ID.Hex}}')">
+
+      <!-- Rename folder -->
+      <button type="button" 
+              class="hover:text-amber-600 hover:bg-slate-100 text-slate-400 p-0.5 rounded transition-colors" 
+              @click.stop="renaming = true" 
+              title="Rename folder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+      </button>
+
+      <!-- Delete collection -->
+      <button type="button" 
+              class="hover:text-red-600 hover:bg-slate-100 text-slate-400 p-0.5 rounded transition-colors"
+              hx-delete="/api/collections/{{.ID.Hex}}"
+              hx-target="#tree"
+              hx-swap="innerHTML"
+              hx-confirm="Delete folder '{{.Name}}' and all of its nested collections and files?"
+              onclick="event.stopPropagation()"
+              title="Delete folder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
+  </summary>
+
+  <!-- Nested Create Form -->
+  <form x-show="showNewFolder" x-transition class="flex gap-1 pl-4 py-1 pr-1.5 mt-0.5 border border-dashed border-slate-200 rounded bg-slate-50" hx-post="/api/collections" hx-target="#tree" hx-swap="innerHTML" x-on:submit="showNewFolder = false" @click.outside="showNewFolder = false" onclick="event.stopPropagation()">
+    <input type="hidden" name="parentId" value="{{.ID.Hex}}">
+    <input name="name" class="border border-slate-300 rounded px-1.5 py-0.5 text-[11px] flex-1 outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Subfolder name..." required autofocus @keydown.escape="showNewFolder = false">
+    <button class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded px-1.5 py-0.5 text-[11px]">Save</button>
+  </form>
+
+  <!-- Nested Rename Form -->
+  <form x-show="renaming" x-transition class="flex gap-1 pl-4 py-1 pr-1.5 border border-dashed border-amber-200 rounded bg-amber-50" hx-put="/api/collections/{{.ID.Hex}}" hx-target="#tree" hx-swap="innerHTML" x-on:submit="renaming = false" @click.outside="renaming = false" onclick="event.stopPropagation()">
+    <input name="name" class="border border-amber-300 rounded px-1.5 py-0.5 text-[11px] flex-1 outline-none focus:ring-1 focus:ring-amber-500/20 focus:border-amber-500" value="{{.Name}}" required autofocus @keydown.escape="renaming = false">
+    <button class="bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded px-1.5 py-0.5 text-[11px]">Rename</button>
+  </form>
+
+  <!-- Recursive Child Contents list -->
+  <div class="ml-2.5 border-l border-slate-150 pl-1.5 space-y-0.5 mt-0.5">
+    {{range .Children}}{{template "collection-node" .}}{{end}}
+    {{range .Documents}}{{template "document-row" .}}{{end}}
+  </div>
+</details>
+{{end}}
+
+{{define "document-row"}}
+<div class="flex items-center justify-between gap-1 rounded hover:bg-blue-50/50 border border-transparent hover:border-blue-100/30 group/row px-1.5 py-0.5 text-[11px] transition-colors duration-150" id="doc-{{.ID.Hex}}">
+  <div class="flex items-center min-w-0 flex-1 gap-1.5">
+    <!-- Checkbox for RAG scope selection -->
+    <input type="checkbox" 
+           class="rag-scope-document w-3 h-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20" 
+           value="{{.ID.Hex}}" 
+           onchange="handleDocumentCheckChange(this)"
+           title="Include this document in RAG search">
+    
+    <!-- Beautiful HTMX trigger link -->
+    <button class="min-w-0 flex-1 text-left truncate flex items-center gap-1 text-slate-600 hover:text-blue-700 font-normal transition-colors" 
+            draggable="true" 
+            ondragstart="event.dataTransfer.setData('text/document-id', '{{.ID.Hex}}')" 
+            hx-get="/ui/documents/{{.ID.Hex}}" 
+            hx-target="#viewer" 
+            hx-swap="innerHTML" 
+            title="{{.DisplayName}}">
+      <!-- Beautiful icon depending on suffix if possible, default to document -->
+      <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      <span class="truncate">{{.DisplayName}}</span>
+    </button>
+  </div>
+
+  <div class="flex items-center gap-1 shrink-0 pl-1">
+    <!-- Compact Document Status Indicators with beautiful badges -->
+    {{if eq .Status "processed"}}
+      <span class="inline-flex items-center justify-center w-3.5 h-3.5 bg-emerald-50 text-emerald-600 rounded-full" title="Processed successfully">
+        <svg class="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      </span>
+    {{else if eq .Status "processing"}}
+      <span class="inline-flex items-center justify-center w-3.5 h-3.5 text-blue-500 animate-spin" title="Processing document pipeline...">
+        <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3m-3-3v12" />
+        </svg>
+      </span>
+    {{else if eq .Status "error"}}
+      <span class="inline-flex items-center justify-center w-3.5 h-3.5 bg-red-50 text-red-600 rounded-full cursor-help hover:scale-105 transition-transform" title="Processing error: {{.Error}}">
+        <svg class="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </span>
+    {{else}}
+      <span class="inline-flex items-center justify-center w-3.5 h-3.5 bg-slate-100 text-slate-400 rounded-full" title="Pending processing">
+        <svg class="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </span>
+    {{end}}
+
+    <!-- Inline document delete action -->
+    <button type="button" 
+            class="opacity-0 group-hover/row:opacity-100 hover:text-red-600 text-slate-400 p-0.5 hover:bg-slate-100 rounded transition-all duration-150 shrink-0"
+            hx-delete="/api/documents/{{.ID.Hex}}"
+            hx-target="#viewer"
+            hx-swap="innerHTML"
+            hx-confirm="Remove '{{.DisplayName}}' from database, storage, and vector index?"
+            hx-on::after-request="htmx.ajax('GET', '/ui/tree', '#tree')"
+            onclick="event.stopPropagation()"
+            title="Delete document">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+      </svg>
+    </button>
   </div>
 </div>
 {{end}}
@@ -25,11 +213,14 @@
       <h2 class="text-2xl font-bold">{{.Document.DisplayName}}</h2>
       <p class="text-sm text-slate-500">{{.Document.MIME}} · {{.Document.Status}}</p>
     </div>
-    <button hx-post="/api/documents/{{.Document.ID.Hex}}/process" hx-target="#viewer" hx-swap="innerHTML" class="bg-slate-900 text-white rounded px-3 py-2 text-sm">Reprocess</button>
+    <div class="flex gap-2">
+      <button hx-post="/api/documents/{{.Document.ID.Hex}}/process" hx-target="#viewer" hx-swap="innerHTML" class="bg-slate-900 text-white rounded px-3 py-2 text-sm">Reprocess</button>
+      <button hx-delete="/api/documents/{{.Document.ID.Hex}}" hx-target="#viewer" hx-swap="innerHTML" hx-confirm="Remove this document from the database, storage, and vector index?" hx-on::after-request="htmx.ajax('GET', '/ui/tree', '#tree')" class="bg-red-600 text-white rounded px-3 py-2 text-sm">Remove</button>
+    </div>
   </div>
   <nav class="flex gap-2 border-b">
     <button :class="tab === 'source' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='source'">Source</button>
-    <button :class="tab === 'reading' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='reading'">Reading</button>
+    <button :class="tab === 'reading' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='reading'; $nextTick(() => renderMarkdownAndDiagrams())">Reading</button>
     <button :class="tab === 'rag' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='rag'">RAG</button>
   </nav>
   <div x-show="tab === 'source'" class="grid grid-cols-[1fr_280px] gap-4">
@@ -46,33 +237,135 @@
       {{end}}
       <div class="bg-white rounded-xl p-4 shadow-sm"><div class="font-semibold">Labels</div><div>{{range .Document.Labels}}<span class="inline-block bg-blue-100 text-blue-800 rounded px-2 py-1 mr-1 mb-1">{{.}}</span>{{end}}</div></div>
       <div class="bg-white rounded-xl p-4 shadow-sm"><div class="font-semibold">Summary</div><p class="text-sm">{{.Document.Summary}}</p></div>
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="font-semibold mb-2">Metadata</div>
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between gap-2"><dt class="text-slate-500">Size</dt><dd>{{.Document.Size}} bytes</dd></div>
+          <div class="flex justify-between gap-2"><dt class="text-slate-500">Created</dt><dd>{{.Document.CreatedAt}}</dd></div>
+          <div class="flex justify-between gap-2"><dt class="text-slate-500">Updated</dt><dd>{{.Document.UpdatedAt}}</dd></div>
+          {{range $key, $value := .Document.Metadata}}
+          <div class="border-t pt-2">
+            <div class="flex justify-between gap-2">
+              <dt class="font-medium">{{$key}}</dt>
+              <dd class="break-all">{{$value}}</dd>
+            </div>
+            <button class="text-xs text-red-600 mt-1" hx-delete="/api/documents/{{$.Document.ID.Hex}}/metadata" hx-vals='{"key":"{{$key}}"}' hx-target="#viewer" hx-swap="innerHTML">Remove</button>
+          </div>
+          {{end}}
+        </dl>
+        <form class="mt-3 grid grid-cols-1 gap-2" hx-post="/api/documents/{{.Document.ID.Hex}}/metadata" hx-target="#viewer" hx-swap="innerHTML">
+          <input name="key" class="border rounded px-2 py-1 text-sm" placeholder="Metadata key" required>
+          <input name="value" class="border rounded px-2 py-1 text-sm" placeholder="Metadata value">
+          <button class="bg-slate-900 text-white rounded px-3 py-1 text-sm">Add metadata</button>
+        </form>
+      </div>
     </aside>
   </div>
   <div x-show="tab === 'reading'" class="prose max-w-none bg-white rounded-xl shadow-sm p-6">
     <div class="markdown whitespace-pre-wrap">{{.Document.Text}}</div>
   </div>
   <div x-show="tab === 'rag'" class="bg-white rounded-xl shadow-sm p-4">
-    <form hx-post="/ui/rag" hx-target="#rag-answer" hx-swap="innerHTML" class="flex gap-2">
+    <form hx-post="/ui/rag" hx-target="#rag-answer" hx-swap="innerHTML" hx-indicator="#document-rag-working" hx-disabled-elt="button" class="space-y-3" onsubmit="this.querySelector('[name=documentIds]').value = this.querySelector('[name=includeSelectedScope]').checked ? selectedRagDocumentIds() : ''">
       <input type="hidden" name="documentId" value="{{.Document.ID.Hex}}">
-      <textarea name="question" class="border rounded-lg p-2 flex-1" placeholder="Ask about your documents"></textarea>
-      <button class="bg-blue-600 text-white rounded-lg px-4">Ask</button>
+      <input type="hidden" name="documentIds">
+      <textarea name="question" class="border rounded-lg p-3 w-full min-h-28" placeholder="Ask about this document"></textarea>
+      <div class="flex items-center justify-between gap-3">
+        <label class="text-sm text-slate-600">
+          <input type="checkbox" name="includeSelectedScope" class="mr-1">
+          Also include checked files/folders from the explorer
+        </label>
+        <div class="flex items-center gap-3">
+          <span id="document-rag-working" class="htmx-indicator text-xs text-slate-500">
+            <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 align-[-2px]"></span>
+            Thinking...
+          </span>
+          <button class="bg-blue-600 text-white rounded-lg px-4 py-2 disabled:opacity-60">Ask</button>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500">Default scope is only this file. Check files or folders in the explorer, then enable this option to broaden the search.</p>
     </form>
     <div id="rag-answer" class="mt-4"></div>
   </div>
 </section>
 {{end}}
 
-{{define "rag-answer.html"}}
-<div class="space-y-4">
-  <div class="prose max-w-none">{{.Answer}}</div>
+{{define "rag-panel.html"}}
+<section class="p-6 space-y-4">
   <div>
-    <h3 class="font-semibold">Sources</h3>
+    <p class="text-sm font-semibold text-emerald-700">Global RAG</p>
+    <h2 class="text-2xl font-bold">Chat with all documents</h2>
+    <p class="text-sm text-slate-500">Ask across every processed document in the vector index. Answers include source citations.</p>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm p-4">
+    <form hx-post="/ui/rag" hx-target="#global-rag-answer" hx-swap="innerHTML" hx-indicator="#global-rag-working" hx-disabled-elt="button" class="space-y-3" onsubmit="this.querySelector('[name=documentIds]').value = selectedRagDocumentIds()">
+      <input type="hidden" name="documentIds">
+      <textarea name="question" class="border rounded-lg p-3 w-full min-h-32" placeholder="Ask a question across all imported documents"></textarea>
+      <div class="flex items-center justify-between gap-3">
+        <div class="space-y-1">
+          <label class="text-sm text-slate-500">Top K sources
+            <input name="topK" type="number" min="1" max="20" value="5" class="ml-2 w-20 border rounded px-2 py-1 text-slate-900">
+          </label>
+          <p class="text-xs text-slate-500">Checks in the explorer limit the answer to selected files/folders. No checks means all documents.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="global-rag-working" class="htmx-indicator text-xs text-slate-500">
+            <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-600 align-[-2px]"></span>
+            Searching...
+          </span>
+          <button class="bg-emerald-600 text-white rounded-lg px-4 py-2 disabled:opacity-60">Ask all documents</button>
+        </div>
+      </div>
+    </form>
+    <div id="global-rag-answer" class="mt-5"></div>
+  </div>
+</section>
+{{end}}
+
+{{define "rag-answer.html"}}
+<div class="space-y-5">
+  <article class="bg-white border rounded-xl p-4 shadow-sm">
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Answer</div>
+    <div class="markdown prose prose-slate max-w-none whitespace-pre-wrap leading-7">{{.Answer}}</div>
+    <form class="mt-4 flex flex-wrap items-center gap-2 border-t pt-3"
+      hx-post="/api/rag/save"
+      hx-target="#rag-save-status"
+      hx-swap="innerHTML"
+      hx-on::after-request="htmx.ajax('GET', '/ui/tree', '#tree')">
+      <input name="title" class="border rounded px-2 py-1 text-sm flex-1 min-w-56" value="RAG answer.md" placeholder="Document title">
+      <textarea name="content" class="hidden"># RAG Answer
+
+## Question
+
+{{.Question}}
+
+## Answer
+
+{{.Answer}}
+
+## Sources
+
+{{range .Sources}}### {{.DisplayName}} · chunk {{.ChunkIndex}}
+
+{{.Text}}
+
+{{end}}</textarea>
+      <button class="bg-slate-900 text-white rounded px-3 py-1 text-sm">Save as document</button>
+      <span id="rag-save-status" class="text-xs text-slate-500"></span>
+    </form>
+  </article>
+  <div class="bg-white border rounded-xl p-4 shadow-sm">
+    <h3 class="font-semibold mb-3">Sources</h3>
+    <div class="space-y-2">
     {{range .Sources}}
-      <details class="border rounded p-2 mt-2">
-        <summary>{{.DisplayName}} · chunk {{.ChunkIndex}}</summary>
-        <p class="text-sm whitespace-pre-wrap mt-2">{{.Text}}</p>
+      <details class="border rounded-lg p-3 bg-slate-50">
+        <summary class="cursor-pointer font-medium">
+          <span class="text-blue-700">{{.DisplayName}}</span>
+          <span class="text-xs text-slate-500">chunk {{.ChunkIndex}}{{if .Score}} · score {{printf "%.3f" .Score}}{{end}}</span>
+        </summary>
+        <p class="text-sm whitespace-pre-wrap mt-3 leading-6 text-slate-700">{{.Text}}</p>
       </details>
     {{end}}
+    </div>
   </div>
 </div>
 {{end}}
@@ -83,4 +376,15 @@
   <div>Created {{.Created}}, updated {{.Updated}}, skipped {{.Skipped}}, queued {{.Processed}} for processing.</div>
 </div>
 <script>htmx.ajax('GET', '/ui/tree', '#tree')</script>
+{{end}}
+
+{{define "source-sync-error.html"}}
+<div class="rounded border border-amber-200 bg-amber-50 text-amber-900 p-2">
+  <div class="font-semibold">{{.Source}} sync unavailable</div>
+  <div>{{.Message}}</div>
+</div>
+{{end}}
+
+{{define "rag-save.html"}}
+<span class="text-emerald-700">Saved {{.Document.DisplayName}} and queued it for processing.</span>
 {{end}}
