@@ -1,0 +1,78 @@
+{{define "app.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="h-screen grid grid-cols-[360px_1fr]">
+    <aside class="border-r bg-white overflow-y-auto p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="font-bold text-lg">Files & Folders</h1>
+        <a href="/logout" class="text-sm text-slate-500">Logout</a>
+      </div>
+      <form class="flex gap-2 mb-3" hx-post="/api/collections" hx-target="#tree" hx-swap="innerHTML" hx-on::after-request="this.reset()">
+        <input name="name" class="border rounded px-2 py-1 flex-1" placeholder="New folder">
+        <button class="bg-blue-600 text-white rounded px-3">+</button>
+      </form>
+      <div id="drop-root" class="border-2 border-dashed rounded-xl p-3 mb-3 text-sm text-slate-500">
+        <input id="file-input" type="file" multiple class="mb-2 text-xs">
+        <input id="folder-input" type="file" webkitdirectory multiple class="mb-2 text-xs">
+        <button onclick="uploadFiles('root')" class="bg-slate-900 text-white rounded px-3 py-1">Upload</button>
+        <progress id="upload-progress" value="0" max="100" class="w-full mt-2 hidden"></progress>
+      </div>
+      <div class="bg-slate-50 border rounded-xl p-3 mb-3 text-sm">
+        <div class="font-semibold mb-1">GitHub Knowledge</div>
+        <p class="text-slate-500 mb-2">Sync configured repos into searchable documents.</p>
+        <button class="bg-purple-600 text-white rounded px-3 py-1"
+          hx-post="/api/sources/github/sync"
+          hx-target="#source-sync-status"
+          hx-swap="innerHTML">Sync GitHub</button>
+        <div id="source-sync-status" class="mt-2 text-xs text-slate-600"></div>
+      </div>
+      <div id="tree" hx-get="/ui/tree" hx-trigger="load" hx-swap="innerHTML"></div>
+    </aside>
+    <main id="viewer" class="overflow-y-auto" hx-get="/ui/empty" hx-trigger="load"></main>
+  </div>
+  <script>
+    mermaid.initialize({ startOnLoad: false });
+    function uploadFiles(collectionId) {
+      const files = [...document.getElementById('file-input').files, ...document.getElementById('folder-input').files];
+      if (!files.length) return;
+      const form = new FormData();
+      for (const file of files) form.append('files', file, file.webkitRelativePath || file.name);
+      const progress = document.getElementById('upload-progress');
+      progress.classList.remove('hidden');
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = e => { if (e.lengthComputable) progress.value = (e.loaded / e.total) * 100; };
+      xhr.onload = () => { htmx.ajax('GET', '/ui/tree', '#tree'); progress.classList.add('hidden'); };
+      xhr.open('POST', `/api/collections/${collectionId}/documents`);
+      xhr.send(form);
+    }
+    function moveDocument(event, collectionId) {
+      event.preventDefault();
+      const docId = event.dataTransfer.getData('text/document-id');
+      if (!docId) return;
+      fetch(`/api/documents/${docId}/move`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ collectionId }) })
+        .then(() => htmx.ajax('GET', '/ui/tree', '#tree'));
+    }
+    document.body.addEventListener('htmx:afterSwap', () => {
+      document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+      document.querySelectorAll('.markdown').forEach(el => {
+        el.innerHTML = marked.parse(el.textContent);
+        mermaid.run({ querySelector: '.language-mermaid' });
+      });
+    });
+  </script>
+</body>
+</html>
+{{end}}

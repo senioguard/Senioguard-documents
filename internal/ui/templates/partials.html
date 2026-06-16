@@ -1,0 +1,86 @@
+{{define "empty.html"}}
+<section class="h-full flex items-center justify-center text-slate-500">
+  Select a document to view source, reading mode, or RAG chat.
+</section>
+{{end}}
+
+{{define "tree.html"}}
+<div class="space-y-1 text-sm">
+  <div class="font-semibold p-2 rounded hover:bg-slate-100" ondrop="moveDocument(event, 'root')" ondragover="event.preventDefault()">📁 Root</div>
+  {{range .Collections}}
+    <div class="p-2 rounded hover:bg-slate-100" style="margin-left: {{.Depth}}rem" ondrop="moveDocument(event, '{{.ID.Hex}}')" ondragover="event.preventDefault()">📁 {{.Path}}</div>
+  {{end}}
+  <div class="mt-3 border-t pt-3">
+    {{range .Documents}}
+      <button class="block w-full text-left p-2 rounded hover:bg-blue-50" draggable="true" ondragstart="event.dataTransfer.setData('text/document-id', '{{.ID.Hex}}')" hx-get="/ui/documents/{{.ID.Hex}}" hx-target="#viewer" hx-swap="innerHTML">📄 {{.DisplayName}} <span class="text-xs text-slate-400">({{.Status}})</span></button>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "document.html"}}
+<section x-data="{tab: 'source'}" class="p-6 space-y-4">
+  <div class="flex items-start justify-between">
+    <div>
+      <h2 class="text-2xl font-bold">{{.Document.DisplayName}}</h2>
+      <p class="text-sm text-slate-500">{{.Document.MIME}} · {{.Document.Status}}</p>
+    </div>
+    <button hx-post="/api/documents/{{.Document.ID.Hex}}/process" hx-target="#viewer" hx-swap="innerHTML" class="bg-slate-900 text-white rounded px-3 py-2 text-sm">Reprocess</button>
+  </div>
+  <nav class="flex gap-2 border-b">
+    <button :class="tab === 'source' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='source'">Source</button>
+    <button :class="tab === 'reading' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='reading'">Reading</button>
+    <button :class="tab === 'rag' ? 'border-blue-600 text-blue-700' : 'border-transparent'" class="border-b-2 px-3 py-2" @click="tab='rag'">RAG</button>
+  </nav>
+  <div x-show="tab === 'source'" class="grid grid-cols-[1fr_280px] gap-4">
+    <pre class="bg-slate-950 text-slate-100 rounded-xl p-4 overflow-auto whitespace-pre-wrap">{{.Document.Text}}</pre>
+    <aside class="space-y-3">
+      <div class="bg-white rounded-xl p-4 shadow-sm"><div class="font-semibold">Category</div><div>{{.Document.Category}}</div></div>
+      {{if .Document.Source}}
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="font-semibold">Source</div>
+        <div class="text-sm">{{.Document.Source}} · {{.Document.SourceType}}</div>
+        <div class="text-sm text-slate-500">{{.Document.Repository}}</div>
+        {{if .Document.ExternalURL}}<a class="text-sm text-blue-700 underline" href="{{.Document.ExternalURL}}" target="_blank" rel="noreferrer">Open original</a>{{end}}
+      </div>
+      {{end}}
+      <div class="bg-white rounded-xl p-4 shadow-sm"><div class="font-semibold">Labels</div><div>{{range .Document.Labels}}<span class="inline-block bg-blue-100 text-blue-800 rounded px-2 py-1 mr-1 mb-1">{{.}}</span>{{end}}</div></div>
+      <div class="bg-white rounded-xl p-4 shadow-sm"><div class="font-semibold">Summary</div><p class="text-sm">{{.Document.Summary}}</p></div>
+    </aside>
+  </div>
+  <div x-show="tab === 'reading'" class="prose max-w-none bg-white rounded-xl shadow-sm p-6">
+    <div class="markdown whitespace-pre-wrap">{{.Document.Text}}</div>
+  </div>
+  <div x-show="tab === 'rag'" class="bg-white rounded-xl shadow-sm p-4">
+    <form hx-post="/ui/rag" hx-target="#rag-answer" hx-swap="innerHTML" class="flex gap-2">
+      <input type="hidden" name="documentId" value="{{.Document.ID.Hex}}">
+      <textarea name="question" class="border rounded-lg p-2 flex-1" placeholder="Ask about your documents"></textarea>
+      <button class="bg-blue-600 text-white rounded-lg px-4">Ask</button>
+    </form>
+    <div id="rag-answer" class="mt-4"></div>
+  </div>
+</section>
+{{end}}
+
+{{define "rag-answer.html"}}
+<div class="space-y-4">
+  <div class="prose max-w-none">{{.Answer}}</div>
+  <div>
+    <h3 class="font-semibold">Sources</h3>
+    {{range .Sources}}
+      <details class="border rounded p-2 mt-2">
+        <summary>{{.DisplayName}} · chunk {{.ChunkIndex}}</summary>
+        <p class="text-sm whitespace-pre-wrap mt-2">{{.Text}}</p>
+      </details>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "source-sync.html"}}
+<div class="rounded bg-white border p-2">
+  <div class="font-semibold">{{.Source}} sync queued</div>
+  <div>Created {{.Created}}, updated {{.Updated}}, skipped {{.Skipped}}, queued {{.Processed}} for processing.</div>
+</div>
+<script>htmx.ajax('GET', '/ui/tree', '#tree')</script>
+{{end}}

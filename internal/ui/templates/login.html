@@ -1,0 +1,20 @@
+{{define "login.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Manager Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-100 flex items-center justify-center">
+  <form method="post" action="/login" class="bg-white shadow-xl rounded-2xl p-8 w-full max-w-sm space-y-4">
+    <h1 class="text-2xl font-bold text-slate-900">Sign in</h1>
+    {{if .Error}}<p class="text-sm text-red-600">{{.Error}}</p>{{end}}
+    <input class="w-full border rounded-lg px-3 py-2" name="username" placeholder="Username" autocomplete="username">
+    <input class="w-full border rounded-lg px-3 py-2" name="password" placeholder="Password" type="password" autocomplete="current-password">
+    <button class="w-full bg-blue-600 text-white rounded-lg py-2 font-semibold">Login</button>
+  </form>
+</body>
+</html>
+{{end}}
