@@ -10,7 +10,7 @@ Fresh clone on Debian/Ubuntu:
 ./scripts/setup.sh
 ```
 
-The setup script installs missing host packages, creates `.env`, downloads Go modules, and starts MongoDB, Qdrant, MinIO, Ollama, and Caddy with Docker Compose.
+The setup script installs missing host packages, creates `.env`, downloads Go modules, and starts MongoDB, Qdrant, MinIO, and Caddy with Docker Compose.
 
 Then edit `.env` and set `NVIDIA_API_KEY`, or switch to local Ollama:
 
@@ -18,7 +18,7 @@ Then edit `.env` and set `NVIDIA_API_KEY`, or switch to local Ollama:
 AI_PROVIDER=ollama
 ```
 
-If using Ollama, pull the default local models:
+Ollama is optional and only starts when `AI_PROVIDER=ollama`, `ENABLE_OLLAMA=1`, or `PULL_OLLAMA_MODELS=1` is set. If using Ollama, pull the default local models:
 
 ```bash
 PULL_OLLAMA_MODELS=1 ./scripts/setup.sh
@@ -43,7 +43,9 @@ Convenience commands:
 
 ```bash
 make setup
+make setup-ollama
 make services-up
+make services-up-ollama
 make run
 make test
 make services-down

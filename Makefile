@@ -1,10 +1,16 @@
-.PHONY: setup services-up services-down run test fmt logs
+.PHONY: setup setup-ollama services-up services-up-ollama services-down run test fmt logs
 
 setup:
 	./scripts/setup.sh
 
+setup-ollama:
+	ENABLE_OLLAMA=1 ./scripts/setup.sh
+
 services-up:
 	docker compose up -d
+
+services-up-ollama:
+	docker compose --profile ollama up -d
 
 services-down:
 	docker compose down

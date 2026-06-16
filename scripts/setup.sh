@@ -28,6 +28,20 @@ compose() {
   fi
 }
 
+env_value() {
+  local key="$1"
+  if [[ ! -f .env ]]; then
+    return
+  fi
+  grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2-
+}
+
+should_enable_ollama() {
+  [[ "${ENABLE_OLLAMA:-0}" == "1" ]] && return 0
+  [[ "${PULL_OLLAMA_MODELS:-0}" == "1" ]] && return 0
+  [[ "$(env_value AI_PROVIDER)" == "ollama" ]]
+}
+
 install_apt_packages() {
   if ! have apt-get; then
     echo "This setup script currently supports Debian/Ubuntu systems with apt-get." >&2
@@ -99,8 +113,13 @@ download_go_modules() {
 }
 
 start_services() {
-  log "Starting MongoDB, Qdrant, MinIO, Ollama, and Caddy"
-  compose up -d
+  if should_enable_ollama; then
+    log "Starting MongoDB, Qdrant, MinIO, Ollama, and Caddy"
+    compose --profile ollama up -d
+  else
+    log "Starting MongoDB, Qdrant, MinIO, and Caddy"
+    compose up -d
+  fi
 }
 
 maybe_pull_ollama_models() {
@@ -109,6 +128,7 @@ maybe_pull_ollama_models() {
   fi
 
   log "Pulling Ollama models"
+  compose --profile ollama up -d ollama
   local llm_model embed_model
   llm_model="$(grep '^OLLAMA_LLM_MODEL=' .env | cut -d= -f2-)"
   embed_model="$(grep '^OLLAMA_EMBED_MODEL=' .env | cut -d= -f2-)"
@@ -131,6 +151,8 @@ Next steps:
   1. Edit .env and set NVIDIA_API_KEY, or set AI_PROVIDER=ollama.
   2. If using Ollama, optionally run:
        PULL_OLLAMA_MODELS=1 ./scripts/setup.sh
+     To start Ollama without pulling models:
+       ENABLE_OLLAMA=1 ./scripts/setup.sh
   3. Start the app:
        go run ./cmd/server
 
