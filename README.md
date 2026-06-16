@@ -4,15 +4,50 @@ A single-binary Go document manager with session auth, MongoDB metadata, Qdrant 
 
 ## Run
 
-1. Start MongoDB, Qdrant, and optionally MinIO/Ollama.
-2. Copy `.env.example` to `.env` and set `NVIDIA_API_KEY` or switch `AI_PROVIDER=ollama`.
-3. Run:
+Fresh clone on Debian/Ubuntu:
+
+```bash
+./scripts/setup.sh
+```
+
+The setup script installs missing host packages, creates `.env`, downloads Go modules, and starts MongoDB, Qdrant, MinIO, Ollama, and Caddy with Docker Compose.
+
+Then edit `.env` and set `NVIDIA_API_KEY`, or switch to local Ollama:
+
+```bash
+AI_PROVIDER=ollama
+```
+
+If using Ollama, pull the default local models:
+
+```bash
+PULL_OLLAMA_MODELS=1 ./scripts/setup.sh
+```
+
+Start the Go app:
 
 ```bash
 go run ./cmd/server
 ```
 
 Open `http://localhost:8080` and log in with `AUTH_USER` / `AUTH_PASSWORD`.
+
+Useful service URLs:
+
+- App: `http://localhost:8080`
+- Caddy proxy: `https://localhost`
+- MinIO console: `http://localhost:9001`
+- Qdrant dashboard: `http://localhost:6333/dashboard`
+
+Convenience commands:
+
+```bash
+make setup
+make services-up
+make run
+make test
+make services-down
+```
 
 ## Modules
 

@@ -1,4 +1,4 @@
 {$DOMAIN:localhost} {
 	encode gzip
-	reverse_proxy 127.0.0.1:{$PORT:8080}
+	reverse_proxy {$UPSTREAM:127.0.0.1:8080}
 }
